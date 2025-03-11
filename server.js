@@ -100,7 +100,7 @@ MongoClient.connect(mongoUrl, {
   });
 
 app.get("/urls", async (req, res) => {
-  const apiKey = req.query.fcc_api_key;
+  const apiKey = req.query["fcc-api-key"];
   if (!apiKey || apiKey !== process.env.FCC_API_KEY) {
     return res.status(401).json({ error: "Unauthorized - Invalid API key" });
   }
