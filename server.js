@@ -110,8 +110,7 @@ app.get("/urls", async (req, res) => {
       console.warn("No URLs found in the collection");
     }
 
-    const urlArray = urls.map((urlObj) => urlObj.url);
-    res.json(urlArray);
+    res.json(urls);
   } catch (error) {
     console.error("Error fetching URLs:", error);
     res.status(500).json({ error: "Failed to fetch URLs" });
