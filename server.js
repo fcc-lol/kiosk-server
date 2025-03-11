@@ -4,27 +4,27 @@ const { Server } = require("socket.io");
 const cors = require("cors");
 const { MongoClient } = require("mongodb");
 const http = require("http");
-const socketIo = require("socket.io");
 
 const dotenv = require("dotenv");
 dotenv.config();
 
+const corsOptions = {
+  origin: [
+    "https://kiosk.fcc.lol",
+    "http://localhost:3000",
+    "http://localhost:5173"
+  ],
+  methods: ["GET", "POST"],
+  credentials: true
+};
+
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
-  cors: {
-    origin: ["https://kiosk.fcc.lol", "http://localhost:3000"],
-    methods: ["GET", "POST"]
-  }
+  cors: corsOptions
 });
 
-app.use(
-  cors({
-    origin: ["https://kiosk.fcc.lol", "http://localhost:5173"],
-    methods: ["GET", "POST"],
-    credentials: true
-  })
-);
+app.use(cors(corsOptions));
 
 let currentUrl = null;
 
@@ -74,23 +74,13 @@ app.get("/health", (req, res) => {
 const mongoUrl = process.env.MONGO_DB_URL;
 let db;
 
-const server = http.createServer(app);
-
-socketIo(server, {
-  cors: {
-    origin: ["https://kiosk.fcc.lol", "http://localhost:5173"],
-    methods: ["GET", "POST"],
-    credentials: true
-  }
-});
-
 MongoClient.connect(mongoUrl, {
   useNewUrlParser: true,
   useUnifiedTopology: true
 })
   .then((client) => {
     db = client.db("main");
-    server.listen(process.env.PORT || 3000, () => {
+    httpServer.listen(process.env.PORT || 3000, () => {
       console.log(`Server is running on port ${process.env.PORT || 3000}`);
     });
   })
