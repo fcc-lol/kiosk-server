@@ -70,15 +70,29 @@ const validateTitle = (title) => {
   );
 };
 
+const processUrlTemplates = (url) => {
+  if (typeof url !== "string") return url;
+
+  // Find all environment variable templates in the URL
+  const envVarRegex = /\{([A-Z0-9_]+)\}/g;
+  let processedUrl = url;
+  let match;
+
+  while ((match = envVarRegex.exec(url)) !== null) {
+    const envVarName = match[1];
+    const envVarValue = process.env[envVarName] || "";
+    processedUrl = processedUrl.replace(`{${envVarName}}`, envVarValue);
+  }
+
+  return processedUrl;
+};
+
 const validateUrl = (url) => {
   if (typeof url !== "string" || url.length > MAX_URL_LENGTH) return false;
 
   try {
-    // Replace template variables before validation
-    const processedUrl = url
-      .replace("{STUDIO_LAT}", process.env.STUDIO_LAT || "")
-      .replace("{STUDIO_LNG}", process.env.STUDIO_LNG || "");
-
+    // Process any environment variable templates before validation
+    const processedUrl = processUrlTemplates(url);
     const urlObj = new URL(processedUrl);
     // Allow both http and https protocols
     if (!["http:", "https:"].includes(urlObj.protocol)) {
@@ -205,14 +219,10 @@ async function getUrlEntryById(id) {
   const entry = config.urls.find((entry) => entry.id === id);
   if (!entry) return null;
 
-  // Replace template variables in the URL
-  const processedUrl = entry.url
-    .replace("{STUDIO_LAT}", process.env.STUDIO_LAT || "")
-    .replace("{STUDIO_LNG}", process.env.STUDIO_LNG || "");
-
+  // Process any environment variable templates in the URL
   return {
     ...entry,
-    url: processedUrl
+    url: processUrlTemplates(entry.url)
   };
 }
 
@@ -254,12 +264,12 @@ app.get("/urls", async (req, res) => {
 
   try {
     const config = await loadConfig();
-    // Process URLs to replace template variables
+    const processTemplates = req.query.processTemplates !== "false";
+
+    // Process URLs to replace template variables if processTemplates is true
     const processedUrls = config.urls.map((entry) => ({
       ...entry,
-      url: entry.url
-        .replace("{STUDIO_LAT}", process.env.STUDIO_LAT || "")
-        .replace("{STUDIO_LNG}", process.env.STUDIO_LNG || "")
+      url: processTemplates ? processUrlTemplates(entry.url) : entry.url
     }));
     res.json(processedUrls);
   } catch (error) {
