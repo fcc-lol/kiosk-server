@@ -1,0 +1,9 @@
+{
+  "service_id": "fcc-kiosk-server",
+  "service_name": "FCC Kiosk Server",
+  "domain": "https://fcc-kiosk-server.noshado.ws",
+  "host": "localhost",
+  "port": "3111",
+  "author": "leo",
+  "created_on": "Thu 17 Apr 2025 11:10:28 AM EDT"
+}
