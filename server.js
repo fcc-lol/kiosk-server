@@ -266,7 +266,7 @@ app.get("/urls", async (req, res) => {
     const config = await loadConfig();
     const processTemplates = req.query.processTemplates !== "false";
 
-    // Process URLs to replace template variables if processTemplates is true
+    // Process URLs to replace template variables if processTemplates is not false
     const processedUrls = config.urls.map((entry) => ({
       ...entry,
       url: processTemplates ? processUrlTemplates(entry.url) : entry.url
@@ -291,8 +291,12 @@ app.get("/current-url", async (req, res) => {
 
   try {
     const urlEntry = await getUrlEntryById(currentId);
+    if (!urlEntry) {
+      return res.status(404).json({ error: "Current URL not found" });
+    }
     res.json({ id: currentId, url: urlEntry.url });
   } catch (error) {
+    console.error("Error getting current URL:", error);
     res.status(500).json({ error: "Failed to get current URL" });
   }
 });
