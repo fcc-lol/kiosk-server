@@ -5,7 +5,8 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
-    "start": "node /home/leo/services/fcc-kiosk-server/server.js"
+    "start": "node /home/fcc/services/kiosk-server/server.js",
+    "dev": "nodemon server.js"
   },
   "author": "",
   "license": "ISC",

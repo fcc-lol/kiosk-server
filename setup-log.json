@@ -3,7 +3,7 @@
   "service_name": "FCC Kiosk Server",
   "domain": "https://fcc-kiosk-server.noshado.ws",
   "host": "localhost",
-  "port": "3111",
+  "port": "3105",
   "author": "leo",
   "created_on": "Thu 17 Apr 2025 11:10:28 AM EDT"
 }
