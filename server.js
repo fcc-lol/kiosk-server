@@ -150,7 +150,7 @@ const sanitizeInput = (input) => {
 
 const corsOptions = {
   origin: (origin, callback) => {
-    const allowedOrigins = ["https://fcc-kiosk-client.leo.gd"];
+    const allowedOrigins = ["https://kiosk.fcc.lol"];
 
     // Only allow localhost in development
     if (process.env.NODE_ENV !== "production") {

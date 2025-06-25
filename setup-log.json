@@ -1,7 +1,7 @@
 {
-  "service_id": "fcc-kiosk-server",
-  "service_name": "FCC Kiosk Server",
-  "domain": "https://fcc-kiosk-server.noshado.ws",
+  "service_id": "kiosk-server",
+  "service_name": "Kiosk Server",
+  "domain": "https://kiosk-server.fcc.lol",
   "host": "localhost",
   "port": "3105",
   "author": "leo",
