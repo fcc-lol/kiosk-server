@@ -205,7 +205,13 @@ async function loadConfig() {
     const data = await fs.readFile(configPath, "utf8");
     const config = JSON.parse(data);
     if (currentId === null && config.urls.length > 0) {
-      currentId = config.urls[0].id;
+      // Initialize with the first enabled URL
+      const firstEnabledUrl = config.urls.find(
+        (entry) => entry.enabled !== false
+      );
+      if (firstEnabledUrl) {
+        currentId = firstEnabledUrl.id;
+      }
     }
     return config;
   } catch (error) {
@@ -244,6 +250,12 @@ io.on("connection", (socket) => {
         return;
       }
 
+      // Check if the URL is enabled
+      if (urlEntry.enabled === false) {
+        socket.emit("error", "Cannot change to a disabled URL");
+        return;
+      }
+
       currentId = id;
       io.emit("currentUrlState", id);
     } catch (error) {
@@ -265,9 +277,16 @@ app.get("/urls", async (req, res) => {
   try {
     const config = await loadConfig();
     const processTemplates = req.query.processTemplates !== "false";
+    const includeDisabled = req.query.includeDisabled === "true";
+
+    // Filter URLs based on includeDisabled parameter
+    // If includeDisabled is true, return all URLs; otherwise only return enabled URLs
+    const filteredUrls = includeDisabled
+      ? config.urls
+      : config.urls.filter((entry) => entry.enabled !== false);
 
     // Process URLs to replace template variables if processTemplates is not false
-    const processedUrls = config.urls.map((entry) => ({
+    const processedUrls = filteredUrls.map((entry) => ({
       ...entry,
       url: processTemplates ? processUrlTemplates(entry.url) : entry.url
     }));
@@ -318,6 +337,11 @@ app.post("/change-url", async (req, res) => {
       return res.status(400).json({ error: "Invalid ID" });
     }
 
+    // Check if the URL is enabled
+    if (urlEntry.enabled === false) {
+      return res.status(400).json({ error: "Cannot change to a disabled URL" });
+    }
+
     currentId = id;
     io.emit("currentUrlState", id);
     res.json({ success: true, message: "URL changed successfully", id });
@@ -328,7 +352,7 @@ app.post("/change-url", async (req, res) => {
 });
 
 app.post("/add-url", async (req, res) => {
-  const { id, title, url, fccApiKey } = req.body;
+  const { id, title, url, enabled, fccApiKey } = req.body;
 
   if (!fccApiKey || fccApiKey !== process.env.FCC_API_KEY) {
     return res.status(401).json({ error: "Unauthorized - Invalid API key" });
@@ -362,7 +386,8 @@ app.post("/add-url", async (req, res) => {
     config.urls.push({
       id: sanitizeInput(id),
       title: sanitizeInput(title),
-      url: sanitizeInput(url)
+      url: sanitizeInput(url),
+      enabled: enabled !== undefined ? Boolean(enabled) : true
     });
 
     // Save updated config
@@ -401,9 +426,12 @@ app.delete("/remove-url", async (req, res) => {
     // Save updated config
     await fs.writeFile(configPath, JSON.stringify(config, null, 2));
 
-    // If the removed URL was the current one, set currentId to the first available URL or null
+    // If the removed URL was the current one, set currentId to the first enabled URL or null
     if (currentId === id) {
-      currentId = config.urls.length > 0 ? config.urls[0].id : null;
+      const firstEnabledUrl = config.urls.find(
+        (entry) => entry.enabled !== false
+      );
+      currentId = firstEnabledUrl ? firstEnabledUrl.id : null;
       io.emit("currentUrlState", currentId);
     }
 
@@ -415,7 +443,7 @@ app.delete("/remove-url", async (req, res) => {
 });
 
 app.put("/edit-url", async (req, res) => {
-  const { id, newId, title, url, fccApiKey } = req.body;
+  const { id, newId, title, url, enabled, fccApiKey } = req.body;
 
   if (!fccApiKey || fccApiKey !== process.env.FCC_API_KEY) {
     return res.status(401).json({ error: "Unauthorized - Invalid API key" });
@@ -461,7 +489,13 @@ app.put("/edit-url", async (req, res) => {
     config.urls[urlIndex] = {
       id: newId !== undefined ? sanitizeInput(newId) : currentEntry.id,
       title: title !== undefined ? sanitizeInput(title) : currentEntry.title,
-      url: url !== undefined ? sanitizeInput(url) : currentEntry.url
+      url: url !== undefined ? sanitizeInput(url) : currentEntry.url,
+      enabled:
+        enabled !== undefined
+          ? Boolean(enabled)
+          : currentEntry.enabled !== undefined
+          ? currentEntry.enabled
+          : true
     };
 
     // If the ID was changed and this was the current URL, update currentId
@@ -477,6 +511,57 @@ app.put("/edit-url", async (req, res) => {
   } catch (error) {
     console.error("Error updating URL:", error);
     res.status(500).json({ error: "Failed to update URL" });
+  }
+});
+
+app.put("/toggle-url-enabled", async (req, res) => {
+  const { id, enabled, fccApiKey } = req.body;
+
+  if (!fccApiKey || fccApiKey !== process.env.FCC_API_KEY) {
+    return res.status(401).json({ error: "Unauthorized - Invalid API key" });
+  }
+
+  if (!id) {
+    return res.status(400).json({ error: "ID is required" });
+  }
+
+  if (enabled === undefined) {
+    return res.status(400).json({ error: "enabled field is required" });
+  }
+
+  try {
+    const config = await loadConfig();
+
+    // Find the URL entry
+    const urlIndex = config.urls.findIndex((entry) => entry.id === id);
+    if (urlIndex === -1) {
+      return res.status(404).json({ error: "URL not found" });
+    }
+
+    // Update the enabled field
+    config.urls[urlIndex].enabled = Boolean(enabled);
+
+    // Save updated config
+    await fs.writeFile(configPath, JSON.stringify(config, null, 2));
+
+    // If the current URL was disabled, switch to the first enabled URL
+    if (currentId === id && !config.urls[urlIndex].enabled) {
+      const firstEnabledUrl = config.urls.find(
+        (entry) => entry.enabled !== false
+      );
+      currentId = firstEnabledUrl ? firstEnabledUrl.id : null;
+      io.emit("currentUrlState", currentId);
+    }
+
+    // Return the updated URL data
+    res.json({
+      success: true,
+      message: "URL enabled status updated successfully",
+      url: config.urls[urlIndex]
+    });
+  } catch (error) {
+    console.error("Error toggling URL enabled status:", error);
+    res.status(500).json({ error: "Failed to update URL enabled status" });
   }
 });
 
