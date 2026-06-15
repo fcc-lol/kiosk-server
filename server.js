@@ -99,18 +99,6 @@ const validateUrl = (url) => {
       return false;
     }
 
-    // Prevent potential SSRF attacks
-    const hostname = urlObj.hostname.toLowerCase();
-    if (
-      hostname === "localhost" ||
-      hostname === "127.0.0.1" ||
-      hostname.startsWith("192.168.") ||
-      hostname.startsWith("10.") ||
-      hostname.startsWith("172.16.")
-    ) {
-      return false;
-    }
-
     // Prevent potential XSS through URL
     if (
       urlObj.search.includes("<script") ||
