@@ -1,8 +1,15 @@
 # FCC Kiosk MCP
 
-An MCP server for switching what the FCC kiosk is currently showing. It's a thin
-client over the deployed kiosk-server HTTP API (`https://kiosk-server.fcc.lol`),
-authenticating with the same `FCC_API_KEY` the server uses for auth.
+An MCP server for switching what the FCC kiosk is currently showing. Same three
+tools, exposed two ways, both authenticating with the kiosk-server's `FCC_API_KEY`:
+
+- **Remote (HTTP)** — built into the kiosk-server itself at
+  `https://kiosk-server.fcc.lol/mcp/<FCC_API_KEY>`. Use this for Claude Desktop /
+  claude.ai **custom connectors** (see "Remote endpoint" below).
+- **Local (stdio)** — the standalone server in this folder (`index.js`). Use this
+  for the Claude Code CLI (see "Local stdio" below).
+
+Both expose the same tools and talk to the same underlying config.
 
 ## Tools
 
@@ -15,7 +22,21 @@ authenticating with the same `FCC_API_KEY` the server uses for auth.
 
 Screens are `A`, `B`, `C`, … (the kiosk auto-creates a screen on first use).
 
-## Configuration
+## Remote endpoint (Claude Desktop / claude.ai)
+
+The kiosk-server exposes a Streamable HTTP MCP endpoint (see `../server.js`). Add
+it as a custom connector with:
+
+```
+https://kiosk-server.fcc.lol/mcp/<FCC_API_KEY>
+```
+
+The API key lives in the URL path because the connector dialog has no API-key
+field (it only offers OAuth, which is not needed here — leave those blank). The
+endpoint also accepts the key via `?fccApiKey=`, an `x-api-key` header, or a
+`Bearer` token.
+
+## Configuration (local stdio)
 
 Set via environment variables:
 

@@ -6,6 +6,11 @@ import { promises as fs } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { randomUUID } from "crypto";
+import { z } from "zod";
 
 dotenv.config();
 
@@ -702,6 +707,165 @@ app.put("/update-order", async (req, res) => {
     res.status(500).json({ error: "Failed to update URL order" });
   }
 });
+
+// ---------------------------------------------------------------------------
+// MCP endpoint (Streamable HTTP) for switching what the kiosk shows from
+// MCP clients like Claude Desktop. Auth reuses FCC_API_KEY. Because the
+// custom-connector UI has no API-key field, the key is accepted in the URL
+// path (/mcp/:key) as well as via query/header for other clients.
+// ---------------------------------------------------------------------------
+const mcpText = (value) => ({
+  content: [{ type: "text", text: JSON.stringify(value, null, 2) }]
+});
+
+function buildKioskMcpServer() {
+  const mcp = new McpServer({ name: "fcc-kiosk", version: "1.0.0" });
+
+  mcp.registerTool(
+    "list_kiosk_apps",
+    {
+      title: "List kiosk apps",
+      description:
+        "List the apps/URLs available to show on a kiosk screen. Returns each entry's id, title, and enabled state. Use the id with switch_kiosk_app. Screens default to 'A'.",
+      inputSchema: {
+        screen: z
+          .string()
+          .optional()
+          .describe("Screen to list (e.g. 'A', 'B', 'C'). Defaults to 'A'."),
+        includeDisabled: z
+          .boolean()
+          .optional()
+          .describe("Include disabled apps in the list. Defaults to false.")
+      }
+    },
+    async ({ screen = "A", includeDisabled = false }) => {
+      const config = await loadConfig();
+      const urls = config.screens[screen] ? config.screens[screen].urls : [];
+      const filtered = includeDisabled
+        ? urls
+        : urls.filter((entry) => entry.enabled !== false);
+      const apps = filtered.map(({ id, title, enabled }) => ({
+        id,
+        title,
+        enabled: enabled !== false
+      }));
+      return mcpText({ screen, count: apps.length, apps });
+    }
+  );
+
+  mcp.registerTool(
+    "get_current_kiosk_app",
+    {
+      title: "Get current kiosk app",
+      description:
+        "Get what a kiosk screen is currently showing (its id and resolved URL). Screens default to 'A'.",
+      inputSchema: {
+        screen: z
+          .string()
+          .optional()
+          .describe("Screen to check (e.g. 'A', 'B', 'C'). Defaults to 'A'.")
+      }
+    },
+    async ({ screen = "A" }) => {
+      const currentId = currentScreens[screen] ?? null;
+      let url = null;
+      if (currentId) {
+        const entry = await getUrlEntryById(currentId, screen);
+        url = entry ? entry.url : null;
+      }
+      return mcpText({ screen, id: currentId, url });
+    }
+  );
+
+  mcp.registerTool(
+    "switch_kiosk_app",
+    {
+      title: "Switch kiosk app",
+      description:
+        "Switch what a kiosk screen is currently showing. Pass the id of an enabled app (see list_kiosk_apps). Screens default to 'A'.",
+      inputSchema: {
+        id: z.string().describe("The id of the app/URL to switch to."),
+        screen: z
+          .string()
+          .optional()
+          .describe("Screen to switch (e.g. 'A', 'B', 'C'). Defaults to 'A'.")
+      }
+    },
+    async ({ id, screen = "A" }) => {
+      const entry = await getUrlEntryById(id, screen);
+      if (!entry) throw new Error("Invalid ID");
+      if (entry.enabled === false) {
+        throw new Error("Cannot change to a disabled URL");
+      }
+      currentScreens[screen] = id;
+      io.emit("currentUrlState", { screen, id });
+      return mcpText({ success: true, id, screen });
+    }
+  );
+
+  return mcp;
+}
+
+const mcpAuth = (req, res, next) => {
+  const bearer = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+  const key =
+    req.params.key || req.query.fccApiKey || req.headers["x-api-key"] || bearer;
+  if (!key || key !== process.env.FCC_API_KEY) {
+    return res.status(401).json({ error: "Unauthorized - Invalid API key" });
+  }
+  next();
+};
+
+// Active Streamable HTTP sessions, keyed by mcp-session-id.
+const mcpTransports = {};
+
+app.post(["/mcp", "/mcp/:key"], mcpAuth, async (req, res) => {
+  try {
+    const sessionId = req.headers["mcp-session-id"];
+    let transport;
+
+    if (sessionId && mcpTransports[sessionId]) {
+      transport = mcpTransports[sessionId];
+    } else if (!sessionId && isInitializeRequest(req.body)) {
+      transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+        onsessioninitialized: (id) => {
+          mcpTransports[id] = transport;
+        }
+      });
+      transport.onclose = () => {
+        if (transport.sessionId) delete mcpTransports[transport.sessionId];
+      };
+      const mcp = buildKioskMcpServer();
+      await mcp.connect(transport);
+    } else {
+      return res.status(400).json({
+        jsonrpc: "2.0",
+        error: { code: -32000, message: "Bad Request: No valid session ID" },
+        id: null
+      });
+    }
+
+    await transport.handleRequest(req, res, req.body);
+  } catch (error) {
+    console.error("MCP request error:", error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "MCP request failed" });
+    }
+  }
+});
+
+// GET (server-sent stream) and DELETE (session teardown) reuse the session.
+const handleMcpSession = async (req, res) => {
+  const sessionId = req.headers["mcp-session-id"];
+  if (!sessionId || !mcpTransports[sessionId]) {
+    return res.status(400).json({ error: "Invalid or missing session ID" });
+  }
+  await mcpTransports[sessionId].handleRequest(req, res);
+};
+
+app.get(["/mcp", "/mcp/:key"], mcpAuth, handleMcpSession);
+app.delete(["/mcp", "/mcp/:key"], mcpAuth, handleMcpSession);
 
 app.get("/health", (req, res) => {
   res.json({ status: "ok", connections: io.engine.clientsCount });
