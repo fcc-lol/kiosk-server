@@ -1,0 +1,19 @@
+{
+  "name": "fcc-kiosk-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for switching what the FCC kiosk is showing",
+  "main": "index.js",
+  "type": "module",
+  "bin": {
+    "fcc-kiosk-mcp": "index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "leo",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.24.1"
+  }
+}
