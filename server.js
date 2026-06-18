@@ -767,6 +767,7 @@ function buildKioskMcpServer() {
       }
     },
     async ({ screen = "A" }) => {
+      await loadConfig(); // initializes currentScreens after a fresh restart
       const currentId = currentScreens[screen] ?? null;
       let url = null;
       if (currentId) {
